@@ -34,9 +34,10 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY)
 # Configuração FastAPI
 app = FastAPI(title="AutoU Email Classifier API", version="0.2")
 
+ALLOWED_ORIGINS = (os.getenv("ALLOWED_ORIGINS") or "").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # em prod coloque só seu front
+    allow_origins=[o.strip() for o in ALLOWED_ORIGINS if o.strip()] or ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
