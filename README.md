@@ -9,7 +9,7 @@ Instruções para rodar localmente:
 
 - Instalar dependências com pip install -r requirements.txt
 
-- Criar um banco de dados local com supabse usando o script fornecido na pasta scripts.sql
+- Criar um banco de dados local com supabase usando o script fornecido na pasta scripts.sql
 
 - Configurar váriaveis de ambiente com base no .env.example (Necessário possuir token da openAI)
 
