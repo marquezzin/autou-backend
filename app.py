@@ -47,12 +47,14 @@ class EmailCreate(BaseModel):
     conteudo: str = Field(..., min_length=1, max_length=20000)
     classificacao: Optional[str] = None
     resposta: Optional[str] = None
+    assunto: Optional[str] = None
 
 class EmailOut(BaseModel):
     id: str
     conteudo: str
     classificacao: Optional[str]
     resposta: Optional[str]
+    assunto: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -219,10 +221,12 @@ REGRAS:
 - Solicite APENAS os dados indicados em "dados_a_pedir". Se a lista estiver vazia, NÃO peça CPF/CNPJ.
 - Se houver anexos declarados no texto (“segue”, “anexo…”), confirme recebimento e encaminhamento.
 - Jamais invente informações de conta/contrato ou compartilhe dados sensíveis.
-- Finalize sempre com:
-Atenciosamente,
-Gabriel
-AutoU Invest
+-- Gere a saída EXCLUSIVAMENTE em JSON, com as chaves:
+  {
+    "assunto": string,   // linha de assunto curta, clara, sem colchetes, sem emojis, 4–10 palavras
+    "corpo": string      // corpo da mensagem final; encerre com:
+                         // "Atenciosamente,\nGabriel\nAutoU Invest"
+  }
 
 Estilo:
 - Evite parágrafos longos (2–3 curtos).
@@ -230,7 +234,7 @@ Estilo:
 - Não compartilhe dados sensíveis.
 """.strip()
 
-def generate_reply(conteudo: str, classificacao: Literal["Produtivo","Improdutivo"], intent: str, sla_horas: int = 24) -> str:
+def generate_reply(conteudo: str, classificacao: Literal["Produtivo","Improdutivo"], intent: str, sla_horas: int = 24) -> dict:
     sys = REPLY_SYSTEM.replace("{{SLA_HORAS}}", str(sla_horas))
     dados = decide_required_fields(intent)
     user = (
@@ -242,19 +246,59 @@ def generate_reply(conteudo: str, classificacao: Literal["Produtivo","Improdutiv
         f"{conteudo}\n---\n\n"
         "Construa a resposta final ao cliente seguindo as REGRAS."
     )
-    resp = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": sys},
-            {"role": "user", "content": user},
-        ],
-        temperature=0.2,
-        max_tokens=int(os.getenv("RESPONSE_MAX_TOKENS", "350")),
-    )
-    out = (resp.choices[0].message.content or "").strip()
-    if len(out.split()) > 160:
-        out = " ".join(out.split()[:160])
-    return out
+    try:
+        resp = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": sys},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.2,
+            max_tokens=int(os.getenv("RESPONSE_MAX_TOKENS", "350")),
+            response_format={"type": "json_object"},
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+        data = json.loads(raw)
+
+        assunto = (data.get("assunto") or "").strip()
+        corpo = (data.get("corpo") or "").strip()
+
+        # sanity/fallbacks
+        if not assunto:
+            # heurística simples
+            if classificacao == "Produtivo":
+                assunto = "Retorno AutoU Invest — seu atendimento"
+            else:
+                assunto = "Agradecimento — AutoU Invest"
+        if len(assunto.split()) > 14:
+            assunto = " ".join(assunto.split()[:14])
+
+        if not corpo:
+            corpo = (
+                "Não foi possível gerar a resposta completa agora. "
+                "Nossa equipe dará continuidade manualmente.\n\n"
+                "Atenciosamente,\nGabriel\nAutoU Invest"
+            )
+
+        # poda de segurança (máx. ~160 palavras)
+        if len(corpo.split()) > 170:
+            corpo = " ".join(corpo.split()[:170])
+
+        return {"assunto": assunto, "corpo": corpo}
+
+    except Exception:
+        # fallback ultra-defensivo
+        assunto = (
+            "Retorno AutoU Invest — seu atendimento"
+            if classificacao == "Produtivo"
+            else "Agradecimento — AutoU Invest"
+        )
+        corpo = (
+            "Olá,\n\nRecebemos sua mensagem e vamos dar sequência internamente. "
+            "Retornaremos em breve.\n\n"
+            "Atenciosamente,\nGabriel\nAutoU Invest"
+        )
+        return {"assunto": assunto, "corpo": corpo}
 
 
 
@@ -269,6 +313,7 @@ def create_email(email: EmailCreate):
         "conteudo": email.conteudo,
         "classificacao": email.classificacao,
         "resposta": email.resposta,
+        "assunto": email.assunto,
     }
     res = supabase.table("emails").insert(data).execute()
     if not res.data:
@@ -310,14 +355,16 @@ async def create_email_ai(
     sla = 24 if classificacao == "Produtivo" else 0
     
     # 2) Gerar resposta
-    resposta = generate_reply(clean, classificacao, intent, sla_horas=(sla or 24))
+    reply = generate_reply(clean, classificacao, intent, sla_horas=(sla or 24))
+    assunto = reply["assunto"]
+    resposta = reply["corpo"]
 
     # 3) Persistir
     data = {
         "conteudo": clean,
         "classificacao": classificacao,
         "resposta": resposta,
-        # Se quiser, crie colunas extras p/ conf/rationale depois
+        "assunto": assunto,
     }
     res = supabase.table("emails").insert(data).execute()
     if not res.data:

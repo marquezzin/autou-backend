@@ -7,6 +7,7 @@ create table if not exists public.emails (
   conteudo text not null,
   classificacao text check (classificacao in ('Produtivo','Improdutivo')),
   resposta text,
+  conteudo text null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
