@@ -2,10 +2,10 @@ Instruções para rodar localmente:
 
 - Clonar o repositório
 
-- Criar e ativar o ambiente virutal:
-  -python3 -m venv .venv
-  -source .venv/bin/activate   # Linux/Mac
-  -.venv\Scripts\activate      # Windows
+- Criar e ativar o ambiente virtual:
+  - `python3 -m venv .venv`
+  - `source .venv/bin/activate`   # Linux/Mac
+  - `.venv\Scripts\activate`      # Windows
 
 - Instalar dependências com pip install -r requirements.txt
 
